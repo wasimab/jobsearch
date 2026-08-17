@@ -2,8 +2,10 @@ name: Daily Job Search
 
 on:
   schedule:
+    # 06:00 UTC every day -- edit the cron expression to change the time.
+    # (crontab.guru is handy if you want a different schedule.)
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # adds a "Run workflow" button so you can trigger it on demand
 
 permissions:
   contents: write
@@ -29,9 +31,6 @@ jobs:
           git config user.name "job-search-bot"
           git config user.email "actions@github.com"
           git add index.html jobs.json
-          if git diff --cached --quiet; then
-            echo "No changes today"
-          else
+          git diff --cached --quiet && echo "No changes today" || \
             git commit -m "Daily job search update $(date -u +%Y-%m-%d)"
-            git push
-          fi
+          git push
