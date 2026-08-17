@@ -58,16 +58,31 @@ from datetime import datetime, timezone
 APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 
-# Adzuna's supported country codes change occasionally -- the current full
-# list is at https://developer.adzuna.com/docs/countries. These are ones
-# commonly supported as of this writing; trim or extend freely.
-COUNTRIES = ["gb", "us", "ca", "au", "sg", "de", "nl", "fr", "in", "nz", "za"]
+# Adzuna covers roughly 18-19 country indexes -- verified against their
+# current docs (https://developer.adzuna.com/docs/countries) as of this
+# edit. Notably, it does NOT include Pakistan, the Gulf states, or most of
+# Southeast Asia -- Jooble below fills that specific gap.
+COUNTRIES = [
+    "us", "gb", "ca", "au", "de", "fr", "nl", "es", "it",
+    "at", "in", "sg", "nz", "za", "ch",
+]
+
+# Second source, specifically to cover what Adzuna's country list can't:
+# Pakistan, the Gulf, and Southeast Asia beyond Singapore. Free key at
+# https://jooble.org/api/about. Unlike Adzuna, Jooble takes a free-text
+# location per call instead of a fixed country-code list.
+JOOBLE_APP_KEY = os.environ.get("JOOBLE_APP_KEY", "")
+JOOBLE_LOCATIONS = [
+    "Pakistan", "United Arab Emirates", "Saudi Arabia", "Qatar", "Kuwait",
+    "Bahrain", "Malaysia", "Hong Kong", "Thailand", "Indonesia", "Taiwan",
+]
 
 # Each string is one search query. Kept as separate terms (rather than one
 # giant OR) so results stay relevant per term instead of noisy.
 KEYWORD_GROUPS = [
     "SAP Concur",
     "Concur consultant",
+    "IT support manager",
     "IT service management manager",
     "application support manager",
     "document management systems",
@@ -76,6 +91,12 @@ KEYWORD_GROUPS = [
                           # see EXPERIENCE_BANK["planning"] below for how
                           # matches on this term are handled honestly
 ]
+
+# 15 countries x 8 keywords (Adzuna) + 11 locations x 8 keywords (Jooble)
+# = a lot of calls per run -- around 200. Both services' free tiers have a
+# daily cap that I don't have an exact current number for. If a run starts
+# failing partway through with rate-limit warnings, trim COUNTRIES,
+# JOOBLE_LOCATIONS, or KEYWORD_GROUPS rather than raising MAX_PAGES.
 
 RESULTS_PER_QUERY = 20
 MAX_PAGES = 1  # raise to 2-3 once a first run confirms everything works
@@ -169,7 +190,7 @@ def relevant_experience(title: str, description: str) -> list[str]:
         hits += EXPERIENCE_BANK["application support"]
     if "document management" in text or re.search(r"\bdms\b", text):
         hits += EXPERIENCE_BANK["document management"]
-    if any(k in text for k in ("it manager", "program manager", "project manager")):
+    if any(k in text for k in ("it manager", "program manager", "project manager", "it support")):
         hits += EXPERIENCE_BANK["it manager"]
     if "integration" in text or "interface" in text:
         hits += EXPERIENCE_BANK["integration"]
@@ -217,11 +238,42 @@ def fetch_adzuna(country: str, query: str, page: int = 1) -> dict:
         return {"results": []}
 
 
+def fetch_jooble(keyword: str, location: str) -> list[dict]:
+    """
+    Best-effort. Unlike Adzuna (which I've now confirmed works end to end
+    against real traffic), I have only moderate confidence in this exact
+    response shape -- I couldn't make a live call from the sandbox this was
+    written in. If JOOBLE_APP_KEY is set but this consistently returns
+    nothing, uncomment the debug print below, check one run's log output,
+    and tell me what the real field names are so I can fix the mapping.
+    """
+    if not JOOBLE_APP_KEY:
+        return []
+    url = f"https://jooble.org/api/{JOOBLE_APP_KEY}"
+    payload = json.dumps({"keywords": keyword, "location": location}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "job-search-agent/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            # print(data)  # uncomment to inspect the raw shape on a first run
+            return data.get("jobs", [])
+    except urllib.error.HTTPError as e:
+        print(f"  [warn] jooble {location}/{keyword}: HTTP {e.code} -- {e.read()[:200]}")
+        return []
+    except Exception as e:  # noqa: BLE001
+        print(f"  [warn] jooble {location}/{keyword}: {e}")
+        return []
+
+
 def collect_jobs() -> list[dict]:
     all_jobs: dict[str, dict] = {}
     total_calls = len(COUNTRIES) * len(KEYWORD_GROUPS) * MAX_PAGES
     print(f"Searching {len(COUNTRIES)} countries x {len(KEYWORD_GROUPS)} "
-          f"keywords x {MAX_PAGES} page(s) = up to {total_calls} API calls...")
+          f"keywords x {MAX_PAGES} page(s) = up to {total_calls} Adzuna calls...")
 
     for country in COUNTRIES:
         for kw in KEYWORD_GROUPS:
@@ -251,6 +303,39 @@ def collect_jobs() -> list[dict]:
                         "relevant_experience": relevant_experience(title, desc),
                     }
                 time.sleep(0.3)  # be polite to the API
+
+    if JOOBLE_APP_KEY:
+        print(f"Searching {len(JOOBLE_LOCATIONS)} locations x "
+              f"{len(KEYWORD_GROUPS)} keywords via Jooble "
+              f"(Pakistan / Gulf / SE Asia)...")
+        for location in JOOBLE_LOCATIONS:
+            for kw in KEYWORD_GROUPS:
+                results = fetch_jooble(kw, location)
+                print(f"  jooble {location}/{kw!r}: {len(results)} results")
+                for r in results:
+                    job_id = "jooble-" + str(r.get("id") or r.get("link") or "")
+                    if job_id == "jooble-" or job_id in all_jobs:
+                        continue
+                    title = (r.get("title") or "").strip()
+                    desc = r.get("snippet", "")
+                    all_jobs[job_id] = {
+                        "id": job_id,
+                        "title": title,
+                        "company": r.get("company", "Unknown"),
+                        "location": r.get("location", location),
+                        "country": location,
+                        "link": r.get("link", ""),
+                        "posted": r.get("updated", ""),
+                        "matched_keyword": kw,
+                        "remote_mention": bool(REMOTE_HINTS.search(f"{title} {desc}")),
+                        "visa_mention": bool(VISA_HINTS.search(desc)),
+                        "relevant_experience": relevant_experience(title, desc),
+                    }
+                time.sleep(0.3)
+    else:
+        print("Skipping Jooble (no JOOBLE_APP_KEY) -- Pakistan/Gulf/SE Asia "
+              "coverage relies on Adzuna's India + Singapore indexes only.")
+
     return list(all_jobs.values())
 
 
@@ -324,10 +409,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   .status-right .hl { color: var(--amber); font-weight: 600; }
 
-  .filters {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    margin-bottom: 20px;
+  .tabs {
+    display: flex; gap: 8px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
+  .subtabs {
+    display: flex; gap: 6px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-left: 4px;
+    border-left: 2px solid var(--border);
+  }
+  .subtabs::-webkit-scrollbar { display: none; }
   .chip {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -337,7 +436,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     padding: 6px 12px;
     border-radius: 999px;
     cursor: pointer;
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
+  .chip.sub { font-size: 11px; padding: 4px 10px; opacity: 0.85; }
   .chip:hover { border-color: var(--teal); color: var(--text); }
   .chip.active {
     background: var(--teal);
@@ -386,6 +488,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-size: 12px;
     color: var(--text-muted);
     margin-top: 6px;
+  }
+  .country-tag {
+    color: var(--amber);
+    font-weight: 600;
   }
 
   .ticket-experience { margin-top: 10px; }
@@ -453,11 +559,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <nav class="filters" id="filters">
-    <button class="chip active" data-filter="all">All</button>
-    <button class="chip" data-filter="remote">Remote mentioned</button>
-    <button class="chip" data-filter="visa">Visa mentioned</button>
+  <nav class="tabs" id="tabs">
+    <button class="chip active" data-tab="all">All</button>
+    <button class="chip" data-tab="country">Country</button>
+    <button class="chip" data-tab="remote">Remote</button>
+    <button class="chip" data-tab="visa">Visa Sponsor</button>
+    <button class="chip" data-tab="role">Role</button>
+    <button class="chip" data-tab="latest">Latest</button>
   </nav>
+  <nav class="subtabs" id="subtabs" style="display:none;"></nav>
 
   <div id="list"></div>
 
@@ -467,14 +577,76 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script>
 const JOBS = __JOBS_JSON__;
 
-function fmtDate(iso) {
-  if (!iso) return "date unknown";
+function daysAgo(iso) {
+  if (!iso) return Infinity;
   const d = new Date(iso);
-  if (isNaN(d)) return "date unknown";
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1 day ago";
-  return days + " days ago";
+  return isNaN(d) ? Infinity : (Date.now() - d.getTime()) / 86400000;
+}
+
+function fmtDate(iso) {
+  const days = daysAgo(iso);
+  if (!isFinite(days)) return "date unknown";
+  const whole = Math.floor(days);
+  if (whole <= 0) return "today";
+  if (whole === 1) return "1 day ago";
+  return whole + " days ago";
+}
+
+function countBy(arr) {
+  const counts = {};
+  arr.forEach(v => { if (v) counts[v] = (counts[v] || 0) + 1; });
+  return counts;
+}
+
+// Role groups consolidate the raw search keywords into cleaner tabs.
+// Matches KEYWORD_GROUPS in job_search.py -- update both together.
+const ROLE_GROUPS = {
+  "SAP Concur": ["SAP Concur", "Concur consultant"],
+  "Support & ITSM": ["IT support manager", "IT service management manager", "application support manager"],
+  "Document Management": ["document management systems"],
+  "Asta Powerproject": ["Asta Powerproject"],
+  "Program & Project Mgmt": ["IT program manager"],
+};
+function roleGroupOf(keyword) {
+  for (const [name, kws] of Object.entries(ROLE_GROUPS)) {
+    if (kws.includes(keyword)) return name;
+  }
+  return null;
+}
+
+const countryCounts = countBy(JOBS.map(j => j.country));
+const COUNTRIES_PRESENT = Object.keys(countryCounts).sort((a, b) => countryCounts[b] - countryCounts[a]);
+
+const roleCounts = countBy(JOBS.map(j => roleGroupOf(j.matched_keyword)));
+const ROLES_PRESENT = Object.keys(ROLE_GROUPS).filter(r => roleCounts[r]).sort((a, b) => (roleCounts[b] || 0) - (roleCounts[a] || 0));
+
+let state = { primary: 'all', secondary: null };
+
+function matchesPrimary(job) {
+  switch (state.primary) {
+    case 'remote': return job.remote_mention;
+    case 'visa': return job.visa_mention;
+    case 'latest': return daysAgo(job.posted) <= 3;
+    case 'country': return state.secondary ? job.country === state.secondary : true;
+    case 'role': return state.secondary ? roleGroupOf(job.matched_keyword) === state.secondary : true;
+    default: return true;
+  }
+}
+
+function renderSubtabs() {
+  const el = document.getElementById('subtabs');
+  let items = null;
+  if (state.primary === 'country') items = COUNTRIES_PRESENT.map(c => [c, `${c} (${countryCounts[c]})`]);
+  if (state.primary === 'role') items = ROLES_PRESENT.map(r => [r, `${r} (${roleCounts[r]})`]);
+  if (!items || !items.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'flex';
+  el.innerHTML = items.map(([value, label]) =>
+    `<button class="chip sub ${state.secondary === value ? 'active' : ''}" data-sub="${value}">${label}</button>`
+  ).join('');
 }
 
 function card(job) {
@@ -498,36 +670,44 @@ function card(job) {
           <h2 class="ticket-title">${job.title || 'Untitled listing'}</h2>
           <div class="badges">${badges}</div>
         </div>
-        <div class="ticket-meta">${job.company} &middot; ${job.location} &middot; posted ${fmtDate(job.posted)} &middot; matched: ${job.matched_keyword}</div>
+        <div class="ticket-meta"><span class="country-tag">${job.country || '--'}</span> &middot; ${job.company} &middot; ${job.location} &middot; posted ${fmtDate(job.posted)} &middot; matched: ${job.matched_keyword}</div>
         ${expBlock}
         <a class="ticket-apply" href="${job.link}" target="_blank" rel="noopener">Open listing &rarr;</a>
       </div>
     </article>`;
 }
 
-function render(filter) {
+function render() {
+  renderSubtabs();
   const list = document.getElementById('list');
-  const filtered = JOBS.filter(j => {
-    if (filter === 'remote') return j.remote_mention;
-    if (filter === 'visa') return j.visa_mention;
-    return true;
-  });
+  const filtered = JOBS.filter(matchesPrimary);
   if (filtered.length === 0) {
-    list.innerHTML = '<div class="empty">No listings match this filter yet. Check back after the next sync, or widen KEYWORD_GROUPS / COUNTRIES in job_search.py.</div>';
+    list.innerHTML = '<div class="empty">No listings in this view yet. Check back after the next sync, or widen KEYWORD_GROUPS / COUNTRIES in job_search.py.</div>';
     return;
   }
   list.innerHTML = filtered.map(card).join('');
 }
 
-document.getElementById('filters').addEventListener('click', (e) => {
+document.getElementById('tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('.chip');
   if (!btn) return;
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('#tabs .chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
-  render(btn.dataset.filter);
+  state.primary = btn.dataset.tab;
+  state.secondary = state.primary === 'country' ? (COUNTRIES_PRESENT[0] || null)
+                   : state.primary === 'role' ? (ROLES_PRESENT[0] || null)
+                   : null;
+  render();
 });
 
-render('all');
+document.getElementById('subtabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  state.secondary = btn.dataset.sub;
+  render();
+});
+
+render();
 </script>
 </body>
 </html>
