@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Search -- Daily Status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12181F;
+    --panel: #1B232D;
+    --panel-hover: #212B36;
+    --border: #2A343F;
+    --text: #E8ECEF;
+    --text-muted: #8B98A5;
+    --amber: #F0A83D;
+    --teal: #4FB8A8;
+    --violet: #A78BC9;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --font-sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 840px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  .status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 18px;
+  }
+  .status-left { display: flex; align-items: center; gap: 10px; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 0 4px rgba(79,184,168,0.15);
+  }
+  .status-label {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+  }
+  .status-right {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .status-right .hl { color: var(--amber); font-weight: 600; }
+
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 20px;
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .chip:hover { border-color: var(--teal); color: var(--text); }
+  .chip.active {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #0B1319;
+    font-weight: 600;
+  }
+  .chip:focus-visible, .ticket-apply:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+
+  .ticket {
+    display: flex;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+  }
+  .ticket:hover { background: var(--panel-hover); }
+  .ticket-status { flex: 0 0 auto; padding-top: 5px; }
+  .ticket-status .dot { background: var(--amber); box-shadow: 0 0 0 4px rgba(240,168,61,0.15); }
+  .ticket-body { flex: 1 1 auto; min-width: 0; }
+  .ticket-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between;
+    align-items: baseline; gap: 8px 12px;
+  }
+  .ticket-title { font-size: 16px; font-weight: 600; margin: 0; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-remote { background: rgba(79,184,168,0.15); color: var(--teal); }
+  .badge-visa { background: rgba(167,139,196,0.18); color: var(--violet); }
+
+  .ticket-meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  .ticket-experience { margin-top: 10px; }
+  .ticket-experience summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--amber);
+    font-weight: 500;
+  }
+  .ticket-experience ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 13.5px;
+    color: var(--text);
+  }
+  .ticket-experience li { margin-bottom: 6px; }
+
+  .ticket-apply {
+    display: inline-block;
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--bg);
+    background: var(--amber);
+    padding: 7px 14px;
+    border-radius: 6px;
+  }
+  .ticket-apply:hover { opacity: 0.9; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  footer {
+    margin-top: 28px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="status-bar">
+    <div class="status-left">
+      <span class="dot"></span>
+      <span class="status-label">JOB SEARCH -- STATUS: ACTIVE</span>
+    </div>
+    <div class="status-right">
+      <span>Last sync: 2026-08-17 05:58 UTC</span>
+      <span>Uptime: 18 yrs, 0 unplanned gaps</span>
+      <span class="hl">7 matches</span>
+    </div>
+  </div>
+
+  <nav class="filters" id="filters">
+    <button class="chip active" data-filter="all">All</button>
+    <button class="chip" data-filter="remote">Remote mentioned</button>
+    <button class="chip" data-filter="visa">Visa mentioned</button>
+  </nav>
+
+  <div id="list"></div>
+
+  <footer>Generated 2026-08-17 05:58 UTC &middot; searches, does not auto-apply &middot; edit job_search.py to change scope</footer>
+</div>
+
+<script>
+const JOBS = [{"id": "Ferrovial Infrastructure-Planning Engineer - Asta Powerproject", "title": "Planning Engineer - Asta Powerproject", "company": "Ferrovial Infrastructure", "location": "Dubai, UAE", "country": "GB", "link": "https://example.com/job/12345", "posted": "2026-08-17T07:00:00Z", "matched_keyword": "Asta Powerproject", "remote_mention": false, "visa_mention": true, "relevant_experience": ["Single point of contact for global project controls, tracking critical-path milestones and resource availability across multiple time zones (ACT UK, 2024-present).", "IT Application Lead / Global Project Manager overseeing multi-region programme delivery and stakeholder coordination through a major M&A integration (Worley, 2018-2020)."]}, {"id": "Meridian Group-Senior SAP Concur Techno-Functional Consultant", "title": "Senior SAP Concur Techno-Functional Consultant", "company": "Meridian Group", "location": "London, UK (Remote)", "country": "GB", "link": "https://example.com/job/12345", "posted": "2026-08-16T09:00:00Z", "matched_keyword": "SAP Concur", "remote_mention": true, "visa_mention": true, "relevant_experience": ["Directed the global deployment of SAP Concur (Travel & Expense) across 20+ regions, including SQL-based executive dashboards (Worley, 2018-2020).", "Primary point of contact for SAP Concur import/integration error resolution across 30,000+ enterprise users (TEXLA Technologies, 2021-2024).", "Led localized SAP Concur implementation across multiple APAC countries -- expense types, policy groups, approval workflows (Jacobs, 2011-2018)."]}, {"id": "Delta Consulting-Concur Integration Consultant", "title": "Concur Integration Consultant", "company": "Delta Consulting", "location": "Sydney, AU (Remote)", "country": "AU", "link": "https://example.com/job/12345", "posted": "2026-08-16T05:00:00Z", "matched_keyword": "Concur consultant", "remote_mention": true, "visa_mention": false, "relevant_experience": ["Directed the global deployment of SAP Concur (Travel & Expense) across 20+ regions, including SQL-based executive dashboards (Worley, 2018-2020).", "Primary point of contact for SAP Concur import/integration error resolution across 30,000+ enterprise users (TEXLA Technologies, 2021-2024).", "Led localized SAP Concur implementation across multiple APAC countries -- expense types, policy groups, approval workflows (Jacobs, 2011-2018)."]}, {"id": "Cascade Financial-Application Support Manager", "title": "Application Support Manager", "company": "Cascade Financial", "location": "Singapore", "country": "SG", "link": "https://example.com/job/12345", "posted": "2026-08-16T02:00:00Z", "matched_keyword": "application support manager", "remote_mention": false, "visa_mention": false, "relevant_experience": ["Directed global application support for 30,000+ enterprise users across US, APAC and EMEA (TEXLA Technologies).", "Maintained 99.9% uptime for enterprise SaaS applications while running global project controls across time zones (ACT UK)."]}, {"id": "Nordic Health Systems-ITSM Manager", "title": "ITSM Manager", "company": "Nordic Health Systems", "location": "Amsterdam, NL", "country": "NL", "link": "https://example.com/job/12345", "posted": "2026-08-15T09:00:00Z", "matched_keyword": "IT service management manager", "remote_mention": false, "visa_mention": false, "relevant_experience": ["ITIL v4 certified; chaired Change Advisory Boards and led Major Incident Management during critical outages.", "Optimized ServiceNow assignment rules, engineering a dynamic routing system across onshore/offshore units (ACT UK, 2024-present).", "Lifted SLA compliance 25% and cut MTTR 30% via real-time KPI dashboards and a self-service knowledge base."]}, {"id": "Halgrove Energy-Document Management Systems Specialist", "title": "Document Management Systems Specialist", "company": "Halgrove Energy", "location": "Remote (US)", "country": "US", "link": "https://example.com/job/12345", "posted": "2026-08-14T09:00:00Z", "matched_keyword": "document management systems", "remote_mention": true, "visa_mention": false, "relevant_experience": ["Managed enterprise Document Management Systems and corporate finance systems at 99% reliability (Jacobs, 2007-2010).", "Led UAT, deployment scheduling and change governance for large-scale enterprise system upgrades."]}, {"id": "Instantia Corp-IT Program Manager - Global Rollouts", "title": "IT Program Manager - Global Rollouts", "company": "Instantia Corp", "location": "Toronto, CA", "country": "CA", "link": "https://example.com/job/12345", "posted": "2026-08-13T09:00:00Z", "matched_keyword": "IT program manager", "remote_mention": false, "visa_mention": true, "relevant_experience": ["IT Program & Support Manager (ACT UK, 2024-present) and IT Application Lead / Global Project Manager (Worley, 2018-2020) -- global project controls, vendor negotiation, licensing strategy."]}];
+
+function fmtDate(iso) {
+  if (!iso) return "date unknown";
+  const d = new Date(iso);
+  if (isNaN(d)) return "date unknown";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return days + " days ago";
+}
+
+function card(job) {
+  const badges = [
+    job.remote_mention ? '<span class="badge badge-remote">REMOTE</span>' : '',
+    job.visa_mention ? '<span class="badge badge-visa">VISA MENTION</span>' : '',
+  ].join('');
+
+  const exp = (job.relevant_experience || []).map(e => `<li>${e}</li>`).join('');
+  const expBlock = exp ? `
+    <details class="ticket-experience">
+      <summary>Why you're a fit</summary>
+      <ul>${exp}</ul>
+    </details>` : '';
+
+  return `
+    <article class="ticket" data-remote="${job.remote_mention}" data-visa="${job.visa_mention}">
+      <div class="ticket-status"><span class="dot"></span></div>
+      <div class="ticket-body">
+        <div class="ticket-head">
+          <h2 class="ticket-title">${job.title || 'Untitled listing'}</h2>
+          <div class="badges">${badges}</div>
+        </div>
+        <div class="ticket-meta">${job.company} &middot; ${job.location} &middot; posted ${fmtDate(job.posted)} &middot; matched: ${job.matched_keyword}</div>
+        ${expBlock}
+        <a class="ticket-apply" href="${job.link}" target="_blank" rel="noopener">Open listing &rarr;</a>
+      </div>
+    </article>`;
+}
+
+function render(filter) {
+  const list = document.getElementById('list');
+  const filtered = JOBS.filter(j => {
+    if (filter === 'remote') return j.remote_mention;
+    if (filter === 'visa') return j.visa_mention;
+    return true;
+  });
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty">No listings match this filter yet. Check back after the next sync, or widen KEYWORD_GROUPS / COUNTRIES in job_search.py.</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(card).join('');
+}
+
+document.getElementById('filters').addEventListener('click', (e) => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  render(btn.dataset.filter);
+});
+
+render('all');
+</script>
+</body>
+</html>
