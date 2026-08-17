@@ -1,4 +1,3 @@
-yaml
 name: Daily Job Search
 
 on:
@@ -30,6 +29,9 @@ jobs:
           git config user.name "job-search-bot"
           git config user.email "actions@github.com"
           git add index.html jobs.json
-          git diff --cached --quiet && echo "No changes today" || \
+          if git diff --cached --quiet; then
+            echo "No changes today"
+          else
             git commit -m "Daily job search update $(date -u +%Y-%m-%d)"
-          git push
+            git push
+          fi
