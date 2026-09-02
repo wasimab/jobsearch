@@ -1,4 +1,4 @@
-# Job Search Portal — v2
+# Job Search Portal — v3
 
 A daily-refreshing job portal that runs on GitHub's free tier. No server, no
 subscription, nothing to keep open. It searches for roles matching your
@@ -92,46 +92,66 @@ time)**, so a fresh portal is waiting when you start your day. Change the
 
 ## Using the portal
 
-Eight tabs across the top:
+The portal navigates on **two axes**. Pick where, then pick what — and the
+page shows both the live listings for that combination *and* the sites to
+search for it. One screen, not two separate tabs.
 
-| Tab | What it shows |
+**Row 1 — WHERE (market).** Every chip carries a live count.
+
+| Market | What it holds |
 |---|---|
-| **All** | Everything, ranked by fit score (remote and contract signals weigh heaviest) |
-| **Remote** | Fully-remote and hybrid roles only — your stated first preference |
-| **Contract** | Contract, freelance, day-rate, interim, outside-IR35 |
-| **Visa Sponsor** | Listings whose text mentions sponsorship, work permit, employment pass, relocation |
-| **Region** | Gulf / SEA-APAC / ANZ / Pakistan / UK-Europe / Americas |
-| **Role** | SAP Concur, Support & ITSM, Programme, Document Management, Contract |
-| **Latest** | Posted in the last three days |
-| **⌕ Job Sites** | The deep-link launcher — see below |
+| **Remote** | Remote and hybrid roles from anywhere. Your first preference — start here daily. |
+| **Contract & Freelance** | Day-rate, interim, freelance, outside-IR35. Fastest route to income. |
+| **Gulf / GCC** | UAE, Saudi, Qatar, Kuwait, Bahrain, Oman. |
+| **Singapore & SE Asia** | SG, Malaysia, HK, Thailand, Indonesia, Philippines, Vietnam. |
+| **Australia & NZ** | Skilled-visa friendly for IT management. |
+| **Pakistan** | Local, plus Pakistan-based roles serving overseas clients. |
+| **UK, Europe & Americas** | UK sponsorship is well-trodden for IT management. |
 
-Each card has a **"Why you're a fit"** drop-down pulling the matching lines
-from your resume. That text is your first draft of the cover-letter opening
-for that role — copy it, don't retype it.
+A listing can sit in several markets at once — a remote contract role in
+Dubai appears under **Remote**, **Contract** and **Gulf**.
 
-### The ⌕ Job Sites tab
+**Row 2 — WHAT (role).**
 
-This is where LinkedIn, Indeed and Glassdoor live. Pick a search term from
-the row (SAP Concur, Application Support Manager, ITSM Manager…) and every
-link below rebuilds itself for that term. **61 sites across 7 regions**, so
-8 terms × 61 sites is roughly 490 pre-built searches, most of them
-pre-filtered to the last 7 days and sorted newest-first.
+| Role | Covers |
+|---|---|
+| **SAP Concur** | Concur, Concur consultant/implementation, Travel & Expense |
+| **Application Support** | Application support manager, IT support manager |
+| **Service Delivery & ITSM** | Service delivery, ITSM, service desk, IT operations manager |
+| **Document Management** | DMS and EDMS, support and implementation |
+| **Programme & Project** | IT programme manager, IT project manager |
 
-The coloured dot on each link is honest bookkeeping:
+**Row 3 — toggles.** Remote only · Contract only · Visa mention · Last 3 days.
+These stack on top of whatever market and role you've chosen.
 
-- 🟢 **verified** — I loaded that exact URL shape in a browser on
-  2026-09-02 and saw real filtered results. Bayt (all six GCC countries +
-  Pakistan), Naukrigulf, Rozee.pk.
-- 🟡 **standard** — the site's long-standing search form. Very likely
-  correct.
-- ⚪ **landing** — the site renders search client-side, so a keyword URL
-  won't stick. It opens their search page and you type the term. GulfTalent
-  and Toptal are the two that matter here.
+### The sites panel
 
-Run `python3 verify_links.py` any time (monthly is plenty) to catch a site
-that has changed its URL format. `403` responses in that output are
-expected and fine — big boards block scripted requests but serve the page
-normally in a real browser.
+Under the heading you get every job site for that market, each link already
+built for the selected role's search term. The **term** chips let you vary
+the phrasing — "SAP Concur" vs "Concur Consultant" vs "Travel and Expense" —
+because boards match differently.
+
+The coloured dot is honest bookkeeping:
+
+- 🟢 **checked live** — that exact URL was loaded in a browser and showed
+  real filtered results. Bayt (all six GCC countries plus Pakistan),
+  Naukrigulf, Rozee.pk.
+- 🟡 **standard search form** — the site's long-standing search URL.
+- ⚪ **type the term there** — search runs client-side and can't be linked.
+  GulfTalent and Toptal.
+
+Run `python3 verify_links.py` monthly. `404` means a site changed format and
+needs fixing in `job_sites.py`. `403` is expected and fine — big boards block
+scripted requests but serve the page normally in a browser.
+
+### SAP ERP is deliberately excluded
+
+You have no SAP ERP experience, so those listings are noise. There are no
+generic SAP keywords in the crawl, and `is_sap_erp_noise()` in
+`job_search.py` actively drops anything mentioning S/4HANA, ABAP, FICO,
+SAP MM/SD/PP/HCM/BW/Basis, SuccessFactors, Ariba or Fiori — *unless* the
+listing also mentions Concur or Travel & Expense, in which case it's a
+genuine Concur role and is kept. Each run prints how many were dropped.
 
 ---
 

@@ -27,7 +27,7 @@ import urllib.request
 import urllib.error
 from urllib.parse import quote
 
-from job_sites import SITE_GROUPS, LAUNCHER_TERMS, slugify
+from job_sites import MARKETS, ROLES, slugify
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -54,11 +54,11 @@ def check(url: str) -> str:
 
 
 def main() -> int:
-    term = sys.argv[1] if len(sys.argv) > 1 else LAUNCHER_TERMS[0]
+    term = sys.argv[1] if len(sys.argv) > 1 else ROLES[0]["site_term"]
     print(f"Checking every deep link with term: {term!r}\n")
     problems = 0
-    for grp in SITE_GROUPS:
-        print(f"── {grp['group']}")
+    for grp in MARKETS:
+        print(f"── {grp['label']}")
         for site in grp["sites"]:
             url = build(site["url"], term)
             status = check(url)
