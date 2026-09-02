@@ -45,6 +45,7 @@ from urllib.parse import quote
 from datetime import datetime, timezone
 
 from job_sites import as_portal_data, all_keywords, ROLES, role_of_keyword
+from me import as_portal_data as profile_data
 
 # ---------------------------------------------------------------------------
 # CONFIG
@@ -55,6 +56,10 @@ APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 JOOBLE_APP_KEY = os.environ.get("JOOBLE_APP_KEY", "")
 
 DEMO_MODE = os.environ.get("DEMO", "") == "1"
+
+# Your repo URL -- powers the "Run new search" button in the portal header.
+# e.g. "https://github.com/wasimabbas/job-search"
+REPO_URL = os.environ.get("REPO_URL", "TODO — set your repo URL here")
 
 COUNTRIES = [
     "gb", "us", "ca", "au", "nz", "sg", "in",
@@ -472,141 +477,187 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #12181F; --panel: #1B232D; --panel-2: #212B36; --panel-3: #26313D;
-    --border: #2A343F; --border-2: #35414E;
-    --text: #E8ECEF; --muted: #8B98A5;
-    --amber: #F0A83D; --teal: #4FB8A8; --violet: #A78BC9; --rose: #D98E8E;
-    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    --bg:#11161C; --panel:#1A222B; --panel-2:#212B35; --panel-3:#28333F;
+    --border:#2A343F; --border-2:#37434F;
+    --text:#E9EDF1; --muted:#8C99A6; --dim:#66727E;
+    --amber:#F0A83D; --teal:#4FB8A8; --violet:#A78BC9; --rose:#D98E8E; --green:#6FBF73;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    --sans:'IBM Plex Sans',-apple-system,'Segoe UI',sans-serif;
+    --r:9px;
   }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-         font-family:var(--sans); line-height:1.5; }
-  a { color: inherit; }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 22px 18px 80px; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.5; }
+  a { color:inherit; }
+  .wrap { max-width:1240px; margin:0 auto; padding:20px 20px 80px; }
 
-  /* ---------- status ---------- */
-  .status {
-    display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center;
-    gap:12px; padding:14px 18px; background:var(--panel);
-    border:1px solid var(--border); border-radius:10px; margin-bottom:16px;
-  }
-  .status-l { display:flex; align-items:center; gap:10px; }
+  /* ---------- status bar ---------- */
+  .status { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center;
+    gap:12px; padding:13px 18px; background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--r); margin-bottom:14px; }
+  .status-l { display:flex; align-items:center; gap:10px; min-width:0; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--teal);
-         box-shadow:0 0 0 4px rgba(79,184,168,.15); flex:0 0 auto; }
-  .status-label { font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; font-weight:500; }
-  .status-r { display:flex; flex-wrap:wrap; gap:14px; font-family:var(--mono);
-              font-size:11.5px; color:var(--muted); }
+    box-shadow:0 0 0 4px rgba(79,184,168,.15); flex:0 0 auto; }
+  .status-label { font-family:var(--mono); font-size:12.5px; letter-spacing:.05em; font-weight:600; }
+  .status-r { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px;
+    font-family:var(--mono); font-size:11.5px; color:var(--muted); }
   .status-r .hl { color:var(--amber); font-weight:600; }
+  .status-r .ok { color:var(--green); font-weight:600; }
+  .runbtn { font-family:var(--mono); font-size:11.5px; font-weight:600; text-decoration:none;
+    background:var(--teal); color:#08110F; padding:7px 13px; border-radius:6px;
+    display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .runbtn:hover { filter:brightness(1.08); }
+  .runbtn.ghost { background:transparent; color:var(--muted); border:1px solid var(--border-2); }
+  .runbtn.ghost:hover { color:var(--text); border-color:var(--teal); }
+
+  /* ---------- staleness ---------- */
+  .stale { display:none; background:rgba(240,168,61,.1); border:1px solid rgba(240,168,61,.4);
+    color:var(--amber); border-radius:var(--r); padding:11px 16px; margin-bottom:14px;
+    font-size:13.5px; }
+  .stale.show { display:block; }
+  .stale a { color:var(--amber); font-weight:600; }
 
   /* ---------- nav ---------- */
-  .navbar { background:var(--panel); border:1px solid var(--border);
-            border-radius:10px; padding:12px 14px; margin-bottom:16px; }
-  .navrow { display:flex; gap:7px; overflow-x:auto; scrollbar-width:none;
-            -webkit-overflow-scrolling:touch; padding-bottom:2px; }
-  .navrow::-webkit-scrollbar { display:none; }
-  .navrow + .navrow { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
-  .navlabel { font-family:var(--mono); font-size:9.5px; letter-spacing:.13em;
-              text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .navbar { background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:13px 15px; margin-bottom:16px; }
+  .navlabel { font-family:var(--mono); font-size:9.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--dim); margin:0 0 7px; }
+  .navrow { display:flex; flex-wrap:wrap; gap:7px; }
+  .navsec + .navsec { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .toolrow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 
-  .chip {
-    font-family:var(--mono); font-size:12px; background:transparent; color:var(--muted);
-    border:1px solid var(--border-2); padding:7px 12px; border-radius:7px;
-    cursor:pointer; white-space:nowrap; flex:0 0 auto;
-    display:inline-flex; align-items:center; gap:7px;
-  }
+  .chip { font-family:var(--mono); font-size:12px; background:transparent; color:var(--muted);
+    border:1px solid var(--border-2); padding:7px 12px; border-radius:7px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:7px; line-height:1.2; }
   .chip:hover { border-color:var(--teal); color:var(--text); }
-  .chip.active { background:var(--teal); border-color:var(--teal); color:#0B1319; font-weight:600; }
-  .chip .n { font-size:10.5px; opacity:.75; font-variant-numeric:tabular-nums; }
-  .chip.active .n { opacity:.8; }
+  .chip.active { background:var(--teal); border-color:var(--teal); color:#08110F; font-weight:600; }
+  .chip .n { font-size:10.5px; opacity:.7; font-variant-numeric:tabular-nums; }
   .chip.role.active { background:var(--amber); border-color:var(--amber); color:#1A1206; }
-  .chip.tog { font-size:11.5px; padding:5px 10px; border-radius:99px; }
-  .chip.tog.active { background:var(--violet); border-color:var(--violet); color:#161020; }
-  .chip.term { font-size:11px; padding:4px 9px; border-radius:99px; }
+  .chip.tog { font-size:11.5px; padding:6px 11px; border-radius:99px; }
+  .chip.tog.active { background:var(--violet); border-color:var(--violet); color:#141020; }
+  .chip.term { font-size:11px; padding:4px 10px; border-radius:99px; }
   .chip.term.active { background:var(--panel-3); border-color:var(--teal); color:var(--text); font-weight:600; }
-  .chip:focus-visible, .sitelink:focus-visible, .apply:focus-visible, summary:focus-visible {
-    outline:2px solid var(--amber); outline-offset:2px; }
+  .chip:focus-visible, .sitelink:focus-visible, .btn:focus-visible, summary:focus-visible,
+  input:focus-visible, select:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 
-  /* ---------- context header ---------- */
-  .context { margin: 4px 0 16px; }
-  .context h1 { font-size:20px; margin:0 0 5px; font-weight:600; letter-spacing:-.01em; }
-  .context p { margin:0; color:var(--muted); font-size:13.5px; max-width:70ch; }
+  .search { font-family:var(--mono); font-size:12px; background:var(--bg); color:var(--text);
+    border:1px solid var(--border-2); border-radius:7px; padding:7px 11px; min-width:210px; flex:1 1 210px; }
+  .search::placeholder { color:var(--dim); }
+  select.sort { font-family:var(--mono); font-size:12px; background:var(--bg); color:var(--text);
+    border:1px solid var(--border-2); border-radius:7px; padding:7px 10px; cursor:pointer; }
 
-  /* ---------- sites panel ---------- */
-  .sites { background:var(--panel); border:1px solid var(--border);
-           border-radius:10px; padding:15px 17px; margin-bottom:18px; }
-  .sites-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 12px; margin-bottom:11px; }
+  /* ---------- context ---------- */
+  .context { margin:2px 0 14px; }
+  .context h1 { font-size:22px; margin:0 0 5px; font-weight:600; letter-spacing:-.015em; }
+  .context p { margin:0; color:var(--muted); font-size:13.5px; max-width:76ch; }
+
+  /* ---------- sites ---------- */
+  .sites { background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:15px 17px; margin-bottom:18px; }
+  .sites-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:11px; }
   .sites-head h2 { font-size:14px; margin:0; font-weight:600; }
-  .sites-head .sub { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .sites-head .sub { font-family:var(--mono); font-size:11px; color:var(--dim); }
   .termrow { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
-  .termrow .lbl { font-family:var(--mono); font-size:10px; letter-spacing:.1em;
-                  text-transform:uppercase; color:var(--muted); margin-right:2px; }
+  .termrow .lbl { font-family:var(--mono); font-size:9.5px; letter-spacing:.13em;
+    text-transform:uppercase; color:var(--dim); margin-right:3px; }
   .sitelinks { display:flex; flex-wrap:wrap; gap:7px; }
-  .sitelink {
-    font-family:var(--mono); font-size:11.5px; text-decoration:none;
-    border:1px solid var(--border-2); border-radius:6px; padding:7px 11px;
-    color:var(--text); background:rgba(255,255,255,.02);
-    display:inline-flex; align-items:center; gap:7px;
-  }
+  .sitelink { font-family:var(--mono); font-size:11.5px; text-decoration:none;
+    border:1px solid var(--border-2); border-radius:6px; padding:7px 11px; color:var(--text);
+    background:rgba(255,255,255,.02); display:inline-flex; align-items:center; gap:7px; }
   .sitelink:hover { border-color:var(--teal); background:var(--panel-2); }
   .conf { width:6px; height:6px; border-radius:50%; flex:0 0 auto; display:inline-block; }
-  .conf-verified { background:var(--teal); }
-  .conf-standard { background:var(--amber); }
-  .conf-landing  { background:var(--muted); }
+  .conf-verified{background:var(--teal);} .conf-standard{background:var(--amber);} .conf-landing{background:var(--dim);}
   .notes { margin-top:11px; display:flex; flex-direction:column; gap:6px; }
-  .note { font-size:12px; color:var(--muted); border-left:2px solid var(--border-2);
-          padding:2px 0 2px 9px; }
+  .note { font-size:12px; color:var(--muted); border-left:2px solid var(--border-2); padding:2px 0 2px 9px; }
   .note b { color:var(--text); font-weight:600; }
-  .legend { font-family:var(--mono); font-size:10.5px; color:var(--muted);
-            margin-top:11px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend { font-family:var(--mono); font-size:10.5px; color:var(--dim); margin-top:11px;
+    display:flex; gap:14px; flex-wrap:wrap; }
   .legend span { display:inline-flex; align-items:center; gap:6px; }
 
   /* ---------- listings ---------- */
-  .listhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px;
-              margin:0 0 11px; }
+  .listhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin:0 0 11px; }
   .listhead h2 { font-size:14px; margin:0; font-weight:600; }
-  .listhead .sub { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .listhead .sub { font-family:var(--mono); font-size:11px; color:var(--dim); }
 
-  .ticket { display:flex; gap:12px; background:var(--panel);
-            border:1px solid var(--border); border-radius:10px;
-            padding:15px 17px; margin-bottom:10px; }
-  .ticket:hover { background:var(--panel-2); }
+  .ticket { background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:15px 17px; margin-bottom:10px; }
+  .ticket:hover { border-color:var(--border-2); }
+  .ticket.applied { opacity:.55; }
+  .ticket.applied .ttitle { text-decoration:line-through; text-decoration-color:var(--dim); }
+  .trow { display:flex; gap:12px; }
   .tstatus { flex:0 0 auto; padding-top:5px; }
   .tstatus .dot { background:var(--amber); box-shadow:0 0 0 4px rgba(240,168,61,.15); }
+  .ticket.applied .tstatus .dot { background:var(--green); box-shadow:0 0 0 4px rgba(111,191,115,.15); }
   .tbody { flex:1 1 auto; min-width:0; }
-  .thead { display:flex; flex-wrap:wrap; justify-content:space-between;
-           align-items:baseline; gap:7px 12px; }
+  .thead { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:7px 12px; }
   .ttitle { font-size:15.5px; font-weight:600; margin:0; }
   .badges { display:flex; gap:5px; flex-wrap:wrap; }
-  .badge { font-family:var(--mono); font-size:10px; letter-spacing:.04em;
-           padding:3px 7px; border-radius:5px; font-weight:600; white-space:nowrap; }
-  .b-remote   { background:rgba(79,184,168,.15);  color:var(--teal); }
-  .b-visa     { background:rgba(167,139,196,.18); color:var(--violet); }
-  .b-contract { background:rgba(217,142,142,.16); color:var(--rose); }
+  .badge { font-family:var(--mono); font-size:10px; letter-spacing:.04em; padding:3px 7px;
+    border-radius:5px; font-weight:600; white-space:nowrap; }
+  .b-remote{background:rgba(79,184,168,.15);color:var(--teal);}
+  .b-visa{background:rgba(167,139,196,.18);color:var(--violet);}
+  .b-contract{background:rgba(217,142,142,.16);color:var(--rose);}
+  .b-applied{background:rgba(111,191,115,.16);color:var(--green);}
   .tmeta { font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-top:6px; }
   .tmeta .tag { color:var(--amber); font-weight:600; }
   details.why { margin-top:9px; }
   details.why summary { cursor:pointer; font-size:12.5px; color:var(--amber); font-weight:500; }
   details.why ul { margin:7px 0 0; padding-left:18px; font-size:13px; }
   details.why li { margin-bottom:5px; }
-  .apply { display:inline-block; margin-top:11px; font-family:var(--mono);
-           font-size:12px; font-weight:600; text-decoration:none; color:var(--bg);
-           background:var(--amber); padding:7px 13px; border-radius:6px; }
-  .apply:hover { opacity:.9; }
 
-  .empty { text-align:center; padding:44px 20px; color:var(--muted);
-           font-family:var(--mono); font-size:12.5px; line-height:1.9;
-           background:var(--panel); border:1px dashed var(--border-2); border-radius:10px; }
-  .more { display:block; width:100%; margin-top:6px; font-family:var(--mono);
-          font-size:12px; background:var(--panel); color:var(--muted);
-          border:1px solid var(--border-2); border-radius:8px; padding:11px;
-          cursor:pointer; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .btn { font-family:var(--mono); font-size:12px; font-weight:600; text-decoration:none;
+    border:1px solid var(--border-2); background:transparent; color:var(--text);
+    padding:7px 13px; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn:hover { border-color:var(--teal); background:var(--panel-2); }
+  .btn.primary { background:var(--amber); border-color:var(--amber); color:#1A1206; }
+  .btn.primary:hover { filter:brightness(1.07); background:var(--amber); }
+  .btn.kit { background:var(--teal); border-color:var(--teal); color:#08110F; }
+  .btn.kit:hover { filter:brightness(1.07); background:var(--teal); }
+  .btn.done { border-color:var(--green); color:var(--green); }
+
+  /* ---------- apply kit ---------- */
+  .applykit { margin-top:13px; border-top:1px dashed var(--border-2); padding-top:13px;
+    display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:820px){ .applykit { grid-template-columns:1fr; } }
+  .kitbox { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 13px; }
+  .kitbox h4 { margin:0 0 8px; font-family:var(--mono); font-size:10px; letter-spacing:.13em;
+    text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .kitbox.span2 { grid-column:1 / -1; }
+  textarea.cover { width:100%; min-height:230px; background:var(--panel); color:var(--text);
+    border:1px solid var(--border-2); border-radius:6px; padding:11px 12px; font-family:var(--sans);
+    font-size:13px; line-height:1.55; resize:vertical; }
+  .fields { display:flex; flex-wrap:wrap; gap:6px; }
+  .field { font-family:var(--mono); font-size:11px; border:1px solid var(--border-2);
+    background:var(--panel); color:var(--text); border-radius:6px; padding:6px 9px; cursor:pointer;
+    text-align:left; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .field:hover { border-color:var(--teal); }
+  .field b { color:var(--dim); font-weight:500; }
+  .field.todo { border-color:rgba(240,168,61,.5); color:var(--amber); }
+  .qa { display:flex; flex-direction:column; gap:9px; }
+  .qa-item { font-size:12.5px; }
+  .qa-q { color:var(--amber); font-weight:600; margin-bottom:3px; }
+  .qa-a { color:var(--muted); line-height:1.5; }
+  .qa-item button { margin-top:4px; }
+  .ak-resume { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .ak-hint { font-size:12px; color:var(--dim); margin-top:9px; line-height:1.5; }
+
+  .empty { text-align:center; padding:44px 20px; color:var(--muted); font-family:var(--mono);
+    font-size:12.5px; line-height:1.9; background:var(--panel);
+    border:1px dashed var(--border-2); border-radius:var(--r); }
+  .empty b { color:var(--text); }
+  .more { display:block; width:100%; margin-top:6px; font-family:var(--mono); font-size:12px;
+    background:var(--panel); color:var(--muted); border:1px solid var(--border-2);
+    border-radius:8px; padding:11px; cursor:pointer; }
   .more:hover { border-color:var(--teal); color:var(--text); }
 
-  footer { margin-top:26px; font-family:var(--mono); font-size:10.5px;
-           color:var(--muted); text-align:center; }
-  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
-  @media (max-width: 560px) { .wrap { padding:16px 12px 60px; } .ttitle { font-size:15px; } }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(10px);
+    background:var(--teal); color:#08110F; font-family:var(--mono); font-size:12px; font-weight:600;
+    padding:9px 16px; border-radius:7px; opacity:0; pointer-events:none; transition:.18s; z-index:50; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  footer { margin-top:28px; font-family:var(--mono); font-size:10.5px; color:var(--dim); text-align:center; }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
+  @media (max-width:560px){ .wrap{padding:14px 12px 60px;} .context h1{font-size:19px;} }
 </style>
 </head>
 <body>
@@ -618,18 +669,37 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <span class="status-label">JOB SEARCH — STATUS: ACTIVE</span>
     </div>
     <div class="status-r">
-      <span>Last sync: __GENERATED_AT__</span>
-      <span>Uptime: 18 yrs, 0 unplanned gaps</span>
-      <span class="hl" id="totalcount">__COUNT__ matches</span>
+      <span>Last sync: <b id="synced">__GENERATED_AT__</b></span>
+      <span class="hl">__COUNT__ listings</span>
+      <span class="ok"><b id="appliedCount">0</b> applied</span>
+      <a class="runbtn" id="runBtn" href="#" target="_blank" rel="noopener">▶ Run new search</a>
+      <button class="runbtn ghost" id="resetApplied" type="button">Reset applied</button>
     </div>
   </div>
 
+  <div class="stale" id="stale"></div>
+
   <div class="navbar">
-    <div class="navlabel">Where — pick a market</div>
-    <div class="navrow" id="marketrow"></div>
-    <div class="navlabel" style="margin-top:12px;">What — pick a role</div>
-    <div class="navrow" id="rolerow"></div>
-    <div class="navrow" id="togglerow"></div>
+    <div class="navsec">
+      <p class="navlabel">Where — pick a market</p>
+      <div class="navrow" id="marketrow"></div>
+    </div>
+    <div class="navsec">
+      <p class="navlabel">What — pick a role</p>
+      <div class="navrow" id="rolerow"></div>
+    </div>
+    <div class="navsec">
+      <p class="navlabel">Narrow it down</p>
+      <div class="toolrow">
+        <div class="navrow" id="togglerow"></div>
+        <input class="search" id="q" type="search" placeholder="Filter by title, company or place…">
+        <select class="sort" id="sort">
+          <option value="score">Sort: best fit</option>
+          <option value="date">Sort: newest first</option>
+          <option value="company">Sort: company A–Z</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <div class="context">
@@ -645,14 +715,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
   <div id="list"></div>
 
-  <footer>Generated __GENERATED_AT__ · searches and links, never auto-applies · SAP ERP roles excluded · edit job_search.py / job_sites.py to change scope</footer>
+  <footer>Generated __GENERATED_AT__ · searches and links, never auto-applies · SAP ERP excluded · edit job_search.py / job_sites.py / me.py to change scope</footer>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
-const JOBS  = __JOBS_JSON__;
-const DATA  = __SITES_JSON__;
-const MARKETS = DATA.markets;
-const ROLES   = DATA.roles;
+const JOBS = __JOBS_JSON__;
+const DATA = __SITES_JSON__;
+const ME   = __PROFILE_JSON__;
+const REPO = "__REPO_URL__";
+const MARKETS = DATA.markets, ROLES = DATA.roles;
 
 /* ---------------- helpers ---------------- */
 function daysAgo(iso){ if(!iso) return Infinity; const d=new Date(iso);
@@ -668,179 +740,309 @@ function buildUrl(tpl, term){
             .replace(/\{kw_plus\}/g, encodeURIComponent(term).replace(/%20/g,"+"))
             .replace(/\{kw\}/g, encodeURIComponent(term));
 }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg;
+  t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1500); }
+function copy(text, label){
+  const done = () => toast((label||"Copied") + " — copied");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallback(text, done));
+  } else fallback(text, done);
+}
+function fallback(text, done){
+  const ta=document.createElement("textarea"); ta.value=text;
+  ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+  ta.select(); try{ document.execCommand("copy"); done(); }catch(e){ toast("Press Ctrl+C to copy"); }
+  document.body.removeChild(ta);
+}
+
+/* ---------------- applied tracking (this browser only) ---------------- */
+const AKEY="wasim-applied-v1";
+let applied = {};
+try { applied = JSON.parse(localStorage.getItem(AKEY) || "{}"); } catch(e) { applied = {}; }
+function saveApplied(){ try{ localStorage.setItem(AKEY, JSON.stringify(applied)); }catch(e){} }
+function isApplied(id){ return applied[id] === true; }
+function countApplied(){ return Object.keys(applied).filter(k=>applied[k]).length; }
 
 /* ---------------- state ---------------- */
-let state = {
-  market: "remote",
-  role: "all",
-  term: null,          // null = use the role's default site term
-  remote: false, contract: false, visa: false, fresh: false,
-  shown: 25
-};
+let state = { market:"all", role:"all", term:null, q:"",
+  sort:"score", remote:false, contract:false, visa:false, fresh:false,
+  hideApplied:false, shown:25, openKit:null };
 
-function marketOf(id){ return MARKETS.find(m => m.id === id); }
-function roleOf(id){ return ROLES.find(r => r.id === id); }
+function marketOf(id){ return MARKETS.find(m=>m.id===id); }
+function roleOf(id){ return ROLES.find(r=>r.id===id); }
+function inMarket(j,id){ return id==="all" || (j.markets||[]).indexOf(id)!==-1; }
 
-function inMarket(j, id){ return (j.markets || []).indexOf(id) !== -1; }
-
-function matches(j, opts){
-  opts = opts || {};
-  if (!opts.ignoreMarket && !inMarket(j, state.market)) return false;
-  if (!opts.ignoreRole && state.role !== "all" && j.role !== state.role) return false;
-  if (state.remote   && !j.remote_mention)   return false;
-  if (state.contract && !j.contract_mention) return false;
-  if (state.visa     && !j.visa_mention)     return false;
-  if (state.fresh    && daysAgo(j.posted) > 3) return false;
+function matches(j){
+  if(!inMarket(j,state.market)) return false;
+  if(state.role!=="all" && j.role!==state.role) return false;
+  if(state.remote && !j.remote_mention) return false;
+  if(state.contract && !j.contract_mention) return false;
+  if(state.visa && !j.visa_mention) return false;
+  if(state.fresh && daysAgo(j.posted)>3) return false;
+  if(state.hideApplied && isApplied(j.id)) return false;
+  if(state.q){
+    const hay=((j.title||"")+" "+(j.company||"")+" "+(j.location||"")).toLowerCase();
+    if(hay.indexOf(state.q.toLowerCase())===-1) return false;
+  }
   return true;
+}
+function sorted(arr){
+  const a=arr.slice();
+  if(state.sort==="date") a.sort((x,y)=>daysAgo(x.posted)-daysAgo(y.posted));
+  else if(state.sort==="company") a.sort((x,y)=>(x.company||"").localeCompare(y.company||""));
+  else a.sort((x,y)=>(y.score||0)-(x.score||0));
+  return a;
 }
 
 /* ---------------- nav ---------------- */
 function renderNav(){
-  document.getElementById("marketrow").innerHTML = MARKETS.map(m => {
-    const n = JOBS.filter(j => inMarket(j, m.id) &&
-      (state.role === "all" || j.role === state.role)).length;
-    return `<button class="chip market ${state.market===m.id?"active":""}" data-market="${m.id}">
-      <span>${esc(m.icon)}</span>${esc(m.label)}<span class="n">${n}</span></button>`;
+  const allMarkets=[{id:"all",label:"Everything",icon:"◇",blurb:"Every listing the agent found, across all markets."}].concat(MARKETS);
+  document.getElementById("marketrow").innerHTML = allMarkets.map(m=>{
+    const n=JOBS.filter(j=>inMarket(j,m.id)&&(state.role==="all"||j.role===state.role)).length;
+    return '<button class="chip market '+(state.market===m.id?"active":"")+'" data-market="'+m.id+'">'+
+      '<span>'+esc(m.icon)+'</span>'+esc(m.label)+'<span class="n">'+n+'</span></button>';
   }).join("");
 
-  const roleChips = [{id:"all", label:"All roles"}].concat(ROLES);
-  document.getElementById("rolerow").innerHTML = roleChips.map(r => {
-    const n = r.id === "all"
-      ? JOBS.filter(j => inMarket(j, state.market)).length
-      : JOBS.filter(j => inMarket(j, state.market) && j.role === r.id).length;
-    return `<button class="chip role ${state.role===r.id?"active":""}" data-role="${r.id}">
-      ${esc(r.label)}<span class="n">${n}</span></button>`;
+  const roleChips=[{id:"all",label:"All roles"}].concat(ROLES);
+  document.getElementById("rolerow").innerHTML = roleChips.map(r=>{
+    const n = r.id==="all" ? JOBS.filter(j=>inMarket(j,state.market)).length
+                           : JOBS.filter(j=>inMarket(j,state.market)&&j.role===r.id).length;
+    return '<button class="chip role '+(state.role===r.id?"active":"")+'" data-role="'+r.id+'">'+
+      esc(r.label)+'<span class="n">'+n+'</span></button>';
   }).join("");
 
-  const togs = [["remote","Remote only"],["contract","Contract only"],
-                ["visa","Visa mention"],["fresh","Last 3 days"]];
-  document.getElementById("togglerow").innerHTML = togs.map(([k,label]) =>
-    `<button class="chip tog ${state[k]?"active":""}" data-tog="${k}">${esc(label)}</button>`
-  ).join("");
+  const togs=[["remote","Remote only"],["contract","Contract only"],["visa","Visa mention"],
+              ["fresh","Last 3 days"],["hideApplied","Hide applied"]];
+  document.getElementById("togglerow").innerHTML = togs.map(t=>
+    '<button class="chip tog '+(state[t[0]]?"active":"")+'" data-tog="'+t[0]+'">'+esc(t[1])+'</button>').join("");
+
+  document.getElementById("appliedCount").textContent = countApplied();
 }
 
 /* ---------------- sites ---------------- */
 function currentTerms(){
-  if (state.role === "all") {
-    return ROLES.map(r => r.term);
-  }
-  const r = roleOf(state.role);
-  return [r.term].concat(r.altTerms || []);
+  if(state.role==="all") return ROLES.map(r=>r.term);
+  const r=roleOf(state.role); return [r.term].concat(r.altTerms||[]);
 }
-function activeTerm(){
-  const terms = currentTerms();
-  return (state.term && terms.indexOf(state.term) !== -1) ? state.term : terms[0];
-}
+function activeTerm(){ const t=currentTerms();
+  return (state.term && t.indexOf(state.term)!==-1) ? state.term : t[0]; }
 
 function renderSites(){
-  const m = marketOf(state.market);
+  const m = state.market==="all" ? null : marketOf(state.market);
   const term = activeTerm();
-  const terms = currentTerms();
+  const termChips = currentTerms().map(t=>
+    '<button class="chip term '+(t===term?"active":"")+'" data-term="'+esc(t)+'">'+esc(t)+'</button>').join("");
 
-  const termChips = terms.map(t =>
-    `<button class="chip term ${t===term?"active":""}" data-term="${esc(t)}">${esc(t)}</button>`
-  ).join("");
+  const sites = m ? m.sites : MARKETS.reduce((acc,mk)=>acc.concat(mk.sites.slice(0,3)),[]);
+  const label = m ? m.label : "all markets — top 3 per region";
 
-  const links = m.sites.map(s => `
-    <a class="sitelink" href="${esc(buildUrl(s.url, term))}" target="_blank" rel="noopener"
-       title="${esc(s.note||"")}"><span class="conf conf-${esc(s.confidence)}"></span>${esc(s.name)}</a>`
-  ).join("");
+  const links = sites.map(s=>
+    '<a class="sitelink" href="'+esc(buildUrl(s.url,term))+'" target="_blank" rel="noopener" title="'+esc(s.note||"")+'">'+
+    '<span class="conf conf-'+esc(s.confidence)+'"></span>'+esc(s.name)+'</a>').join("");
+  const notes = sites.filter(s=>s.note).map(s=>
+    '<div class="note"><b>'+esc(s.name)+'</b> — '+esc(s.note)+'</div>').join("");
 
-  const notes = m.sites.filter(s => s.note).map(s =>
-    `<div class="note"><b>${esc(s.name)}</b> — ${esc(s.note)}</div>`).join("");
+  document.getElementById("sitesPanel").innerHTML =
+    '<div class="sites-head"><h2>Search these sites — '+esc(label)+'</h2>'+
+    '<span class="sub">'+sites.length+' sites · live results, one click</span></div>'+
+    '<div class="termrow"><span class="lbl">term</span>'+termChips+'</div>'+
+    '<div class="sitelinks">'+links+'</div>'+
+    '<div class="notes">'+notes+'</div>'+
+    '<div class="legend">'+
+      '<span><i class="conf conf-verified"></i> checked live</span>'+
+      '<span><i class="conf conf-standard"></i> standard search form</span>'+
+      '<span><i class="conf conf-landing"></i> type the term there</span></div>';
+}
 
-  document.getElementById("sitesPanel").innerHTML = `
-    <div class="sites-head">
-      <h2>Search these sites — ${esc(m.label)}</h2>
-      <span class="sub">${m.sites.length} sites · live results, one click</span>
-    </div>
-    <div class="termrow"><span class="lbl">term</span>${termChips}</div>
-    <div class="sitelinks">${links}</div>
-    <div class="notes">${notes}</div>
-    <div class="legend">
-      <span><i class="conf conf-verified"></i> checked live</span>
-      <span><i class="conf conf-standard"></i> standard search form</span>
-      <span><i class="conf conf-landing"></i> type the term there</span>
-    </div>`;
+/* ---------------- apply kit ---------------- */
+function fill(tpl, map){
+  return tpl.replace(/\{(\w+)\}/g, (m,k)=> (map[k]!==undefined ? map[k] : m));
+}
+function coverFor(j){
+  const roleId = ME.openings[j.role] ? j.role : "other";
+  const visaLine = /TODO/.test(ME.profile.visa_status) ? ""
+    : "On eligibility: " + ME.profile.visa_status;
+  return fill(ME.coverTemplate, {
+    title: j.title || "the role",
+    company: j.company || "your organisation",
+    opening: ME.openings[roleId],
+    proof: ME.proofs[roleId],
+    availability_short: ME.profile.work_pref,
+    notice_period: ME.profile.notice_period,
+    visa_line: visaLine,
+    name: ME.profile.name,
+    phone: ME.profile.phone,
+    email: ME.profile.email,
+    linkedin: ME.profile.linkedin
+  });
+}
+function resumeKeyFor(j){
+  const mk = j.markets || [];
+  if(mk.indexOf("gcc")!==-1) return "gcc";
+  if(j.role==="concur") return "concur";
+  if(j.role==="appsupport"||j.role==="servicedelivery") return "itsm";
+  return "master";
+}
+function kitHtml(j){
+  const r = ME.resumes[resumeKeyFor(j)];
+  const roleLabel = (roleOf(j.role)||{label:"this"}).label;
+
+  const fieldDefs = [
+    ["Name", ME.profile.name], ["Email", ME.profile.email], ["Phone", ME.profile.phone],
+    ["Location", ME.profile.location], ["LinkedIn", ME.profile.linkedin],
+    ["Nationality", ME.profile.nationality], ["Notice", ME.profile.notice_period],
+    ["Visa", ME.profile.visa_status], ["Salary", ME.profile.salary_expect],
+    ["Licence", ME.profile.driving_licence], ["Relocation", ME.profile.relocation],
+    ["Experience", ME.profile.years + " years"]
+  ];
+  const fields = fieldDefs.map(f=>{
+    const todo = /TODO/.test(f[1]);
+    return '<button class="field '+(todo?"todo":"")+'" data-copy="'+esc(f[1])+'" data-label="'+esc(f[0])+'">'+
+      '<b>'+esc(f[0])+'</b> '+esc(todo ? "— fill in me.py" : f[1])+'</button>';
+  }).join("");
+
+  const qas = ME.stockAnswers.map((s,i)=>{
+    const a = fill(s.a, { role_label: roleLabel, company: j.company||"the company",
+      notice_period: ME.profile.notice_period, availability: ME.profile.availability,
+      visa_status: ME.profile.visa_status });
+    return '<div class="qa-item"><div class="qa-q">'+esc(s.q)+'</div>'+
+      '<div class="qa-a">'+esc(a)+'</div>'+
+      '<button class="btn" data-copy="'+esc(a)+'" data-label="Answer">Copy</button></div>';
+  }).join("");
+
+  return '<div class="applykit">'+
+    '<div class="kitbox span2"><h4>Resume to send</h4><div class="ak-resume">'+
+      '<a class="btn primary" href="'+esc(r.file)+'" target="_blank" rel="noopener">↓ '+esc(r.label)+'</a>'+
+      '<span class="ak-hint" style="margin:0;">Chosen for this listing. Commit your PDFs to a <code>resumes/</code> folder in the repo for this link to work.</span>'+
+    '</div></div>'+
+    '<div class="kitbox"><h4>Cover note — edit before sending</h4>'+
+      '<textarea class="cover" id="cover-'+esc(j.id)+'">'+esc(coverFor(j))+'</textarea>'+
+      '<div class="actions"><button class="btn kit" data-copyel="cover-'+esc(j.id)+'" data-label="Cover note">Copy cover note</button></div>'+
+    '</div>'+
+    '<div class="kitbox"><h4>Application answers</h4><div class="qa">'+qas+'</div></div>'+
+    '<div class="kitbox span2"><h4>Form fields — click any to copy</h4><div class="fields">'+fields+'</div>'+
+      '<p class="ak-hint">Faster still: save these once in Chrome (Settings → Autofill → Addresses) and most application forms fill themselves. Amber fields are still TODO in <code>me.py</code>.</p>'+
+    '</div></div>';
 }
 
 /* ---------------- listings ---------------- */
 function card(j){
+  const ap = isApplied(j.id);
   const badges = [
-    j.remote_mention   ? '<span class="badge b-remote">REMOTE</span>' : '',
-    j.contract_mention ? '<span class="badge b-contract">CONTRACT</span>' : '',
-    j.visa_mention     ? '<span class="badge b-visa">VISA MENTION</span>' : '',
+    j.remote_mention?'<span class="badge b-remote">REMOTE</span>':'',
+    j.contract_mention?'<span class="badge b-contract">CONTRACT</span>':'',
+    j.visa_mention?'<span class="badge b-visa">VISA MENTION</span>':'',
+    ap?'<span class="badge b-applied">APPLIED</span>':''
   ].join('');
-  const exp = (j.relevant_experience||[]).map(e => `<li>${esc(e)}</li>`).join('');
-  const why = exp ? `<details class="why"><summary>Why you're a fit — use this in your cover note</summary><ul>${exp}</ul></details>` : '';
+  const exp=(j.relevant_experience||[]).map(e=>'<li>'+esc(e)+'</li>').join('');
+  const why = exp ? '<details class="why"><summary>Why you\'re a fit</summary><ul>'+exp+'</ul></details>' : '';
   const r = roleOf(j.role);
-  return `
-    <article class="ticket">
-      <div class="tstatus"><span class="dot"></span></div>
-      <div class="tbody">
-        <div class="thead">
-          <h3 class="ttitle">${esc(j.title)||"Untitled listing"}</h3>
-          <div class="badges">${badges}</div>
-        </div>
-        <div class="tmeta"><span class="tag">${esc(r?r.label:"Other")}</span> · ${esc(j.company)} · ${esc(j.location)} · posted ${fmtDate(j.posted)} · via ${esc(j.source||"—")}</div>
-        ${why}
-        <a class="apply" href="${esc(j.link)}" target="_blank" rel="noopener">Open listing →</a>
-      </div>
-    </article>`;
+  const open = state.openKit === j.id;
+  return '<article class="ticket '+(ap?"applied":"")+'" data-id="'+esc(j.id)+'">'+
+    '<div class="trow"><div class="tstatus"><span class="dot"></span></div><div class="tbody">'+
+    '<div class="thead"><h3 class="ttitle">'+(esc(j.title)||"Untitled listing")+'</h3>'+
+    '<div class="badges">'+badges+'</div></div>'+
+    '<div class="tmeta"><span class="tag">'+esc(r?r.label:"Other")+'</span> · '+esc(j.company)+' · '+
+      esc(j.location)+' · posted '+fmtDate(j.posted)+' · via '+esc(j.source||"—")+'</div>'+
+    why+
+    '<div class="actions">'+
+      '<a class="btn primary" href="'+esc(j.link)+'" target="_blank" rel="noopener">Open listing →</a>'+
+      '<button class="btn kit" data-kit="'+esc(j.id)+'">'+(open?"Hide apply kit":"⚡ Apply kit")+'</button>'+
+      '<button class="btn '+(ap?"done":"")+'" data-applied="'+esc(j.id)+'">'+(ap?"✓ Applied":"Mark applied")+'</button>'+
+    '</div>'+
+    (open ? kitHtml(j) : '')+
+    '</div></div></article>';
 }
 
 function renderList(){
-  const list = document.getElementById("list");
-  const all = JOBS.filter(j => matches(j)).sort((a,b) => (b.score||0)-(a.score||0));
+  const list=document.getElementById("list");
+  const all=sorted(JOBS.filter(matches));
   document.getElementById("listSub").textContent =
-    all.length + (all.length === 1 ? " match" : " matches") + ", best fit first";
+    all.length + (all.length===1?" match":" matches") +
+    (state.sort==="score"?", best fit first":state.sort==="date"?", newest first":", by company");
 
-  if (!all.length){
-    list.innerHTML = `<div class="empty">
-      Nothing here right now.<br>
-      The site links above still work — they search live, every time.<br>
-      Or clear a filter, or try another market.
-    </div>`;
+  if(!all.length){
+    list.innerHTML='<div class="empty"><b>Nothing matches this combination.</b><br>'+
+      'The site links above still work — they search live, every time.<br>'+
+      'Clear a filter, or pick another market.</div>';
     return;
   }
-  const slice = all.slice(0, state.shown);
+  const slice=all.slice(0,state.shown);
   list.innerHTML = slice.map(card).join("") +
-    (all.length > state.shown
-      ? `<button class="more" id="more">Show ${Math.min(25, all.length-state.shown)} more — ${all.length-state.shown} still hidden</button>`
+    (all.length>state.shown
+      ? '<button class="more" id="more">Show '+Math.min(25,all.length-state.shown)+' more — '+(all.length-state.shown)+' still hidden</button>'
       : "");
-  const more = document.getElementById("more");
-  if (more) more.addEventListener("click", () => { state.shown += 25; renderList(); });
+  const more=document.getElementById("more");
+  if(more) more.addEventListener("click",()=>{ state.shown+=25; renderList(); });
 }
 
-/* ---------------- context ---------------- */
+/* ---------------- context + staleness ---------------- */
 function renderContext(){
-  const m = marketOf(state.market);
-  const r = state.role === "all" ? null : roleOf(state.role);
-  document.getElementById("ctxTitle").textContent =
-    r ? `${r.label} — ${m.label}` : m.label;
+  const m = state.market==="all" ? {label:"Everything", blurb:"Every listing the agent found, across all markets and roles."} : marketOf(state.market);
+  const r = state.role==="all" ? null : roleOf(state.role);
+  document.getElementById("ctxTitle").textContent = r ? (r.label+" — "+m.label) : m.label;
   document.getElementById("ctxBlurb").textContent = r ? r.blurb : m.blurb;
+}
+function renderChrome(){
+  const runBtn=document.getElementById("runBtn");
+  if(REPO && REPO.indexOf("TODO")===-1){ runBtn.href = REPO.replace(/\/$/,"") + "/actions/workflows/daily-job-search.yml"; }
+  else { runBtn.href="#"; runBtn.title="Set REPO_URL in job_search.py to enable this"; }
+
+  const el=document.getElementById("stale");
+  const synced=document.getElementById("synced").textContent.trim();
+  const d=new Date(synced.replace(" UTC","Z").replace(" ","T"));
+  const hrs=isNaN(d)?0:(Date.now()-d.getTime())/3600000;
+  if(!JOBS.length){
+    el.className="stale show";
+    el.innerHTML='<b>No listings in this build.</b> The page was generated without any search results — '+
+      'either the API keys aren\'t set as repo secrets, or this file was built in demo mode. '+
+      'Click <b>▶ Run new search</b> above, then hard-refresh this page (Ctrl+Shift+R).';
+  } else if(hrs>36){
+    el.className="stale show";
+    el.innerHTML='<b>These results are '+Math.round(hrs/24)+' days old.</b> '+
+      'Click <b>▶ Run new search</b> to refresh, then hard-refresh this page.';
+  }
 }
 
 function render(){ renderNav(); renderContext(); renderSites(); renderList(); }
 
 /* ---------------- events ---------------- */
-document.getElementById("marketrow").addEventListener("click", e => {
-  const b = e.target.closest("[data-market]"); if(!b) return;
-  state.market = b.dataset.market; state.shown = 25; render();
-});
-document.getElementById("rolerow").addEventListener("click", e => {
-  const b = e.target.closest("[data-role]"); if(!b) return;
-  state.role = b.dataset.role; state.term = null; state.shown = 25; render();
-});
-document.getElementById("togglerow").addEventListener("click", e => {
-  const b = e.target.closest("[data-tog]"); if(!b) return;
-  state[b.dataset.tog] = !state[b.dataset.tog]; state.shown = 25; render();
-});
-document.getElementById("sitesPanel").addEventListener("click", e => {
-  const b = e.target.closest("[data-term]"); if(!b) return;
-  state.term = b.dataset.term; renderSites();
+document.getElementById("marketrow").addEventListener("click",e=>{
+  const b=e.target.closest("[data-market]"); if(!b) return;
+  state.market=b.dataset.market; state.shown=25; state.openKit=null; render(); });
+document.getElementById("rolerow").addEventListener("click",e=>{
+  const b=e.target.closest("[data-role]"); if(!b) return;
+  state.role=b.dataset.role; state.term=null; state.shown=25; state.openKit=null; render(); });
+document.getElementById("togglerow").addEventListener("click",e=>{
+  const b=e.target.closest("[data-tog]"); if(!b) return;
+  state[b.dataset.tog]=!state[b.dataset.tog]; state.shown=25; render(); });
+document.getElementById("sitesPanel").addEventListener("click",e=>{
+  const b=e.target.closest("[data-term]"); if(!b) return;
+  state.term=b.dataset.term; renderSites(); });
+document.getElementById("q").addEventListener("input",e=>{
+  state.q=e.target.value; state.shown=25; renderList(); });
+document.getElementById("sort").addEventListener("change",e=>{
+  state.sort=e.target.value; renderList(); });
+
+document.getElementById("list").addEventListener("click",e=>{
+  const kit=e.target.closest("[data-kit]");
+  if(kit){ state.openKit = (state.openKit===kit.dataset.kit) ? null : kit.dataset.kit; renderList(); return; }
+  const mk=e.target.closest("[data-applied]");
+  if(mk){ const id=mk.dataset.applied; applied[id]=!isApplied(id); saveApplied();
+    renderNav(); renderList(); toast(applied[id]?"Marked as applied":"Unmarked"); return; }
+  const cp=e.target.closest("[data-copy]");
+  if(cp){ copy(cp.dataset.copy, cp.dataset.label||"Text"); return; }
+  const cel=e.target.closest("[data-copyel]");
+  if(cel){ const t=document.getElementById(cel.dataset.copyel);
+    if(t) copy(t.value, cel.dataset.label||"Text"); return; }
 });
 
+document.getElementById("resetApplied").addEventListener("click",()=>{
+  if(!countApplied()){ toast("Nothing marked yet"); return; }
+  applied={}; saveApplied(); renderNav(); renderList(); toast("Applied list cleared");
+});
+
+renderChrome();
 render();
 </script>
 </body>
@@ -855,6 +1057,8 @@ def build_html(jobs: list[dict]) -> str:
     html = HTML_TEMPLATE
     html = html.replace("__JOBS_JSON__", json.dumps(jobs_sorted))
     html = html.replace("__SITES_JSON__", json.dumps(as_portal_data()))
+    html = html.replace("__PROFILE_JSON__", json.dumps(profile_data()))
+    html = html.replace("__REPO_URL__", REPO_URL)
     html = html.replace("__GENERATED_AT__", generated_at)
     html = html.replace("__COUNT__", str(len(jobs_sorted)))
     return html

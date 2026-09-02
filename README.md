@@ -1,4 +1,4 @@
-# Job Search Portal — v3
+# Job Search Portal — v4
 
 A daily-refreshing job portal that runs on GitHub's free tier. No server, no
 subscription, nothing to keep open. It searches for roles matching your
@@ -30,8 +30,10 @@ at the repo root or GitHub Actions won't find the schedule.
 job-search/
 ├── job_search.py
 ├── job_sites.py
+├── me.py              <- YOUR details. Fill in the TODOs.
 ├── verify_links.py
 ├── README.md
+├── resumes/           <- put your 4 PDFs here
 └── .github/
     └── workflows/
         └── daily-job-search.yml
@@ -143,6 +145,36 @@ The coloured dot is honest bookkeeping:
 Run `python3 verify_links.py` monthly. `404` means a site changed format and
 needs fixing in `job_sites.py`. `403` is expected and fine — big boards block
 scripted requests but serve the page normally in a browser.
+
+### The Apply Kit
+
+Every listing has an **⚡ Apply kit** button. It opens a panel with everything
+one application needs:
+
+- **The right resume**, chosen automatically — Gulf listing gets the GCC
+  version, Concur role gets the Concur version, support/ITSM gets the ITSM
+  version, everything else gets the master. Links to a `resumes/` folder in
+  the repo, so commit your four PDFs there.
+- **A cover note**, already written for that company and that role, in an
+  editable box. Edit it, hit Copy.
+- **Application answers** — the five questions every form asks, answered.
+- **Form fields** — click any to copy. Amber ones are still TODO in `me.py`.
+
+**Mark applied** tracks what you've sent. The count sits in the header, and
+**Hide applied** clears them out of the list. It's stored in your browser
+only, so it doesn't survive clearing site data or move between devices —
+keep a spreadsheet too if you want a permanent record.
+
+For the truly repetitive fields, save them once in **Chrome → Settings →
+Autofill → Addresses**. Most application forms then fill themselves, and the
+Apply Kit covers what autofill can't.
+
+### Fill in me.py first
+
+`me.py` has five TODOs: nationality, notice period, visa status, salary
+expectation, driving licence. Every Apply Kit uses them, and they're the
+fields recruiters filter on. Ten minutes once, saved on every application
+after.
 
 ### SAP ERP is deliberately excluded
 
