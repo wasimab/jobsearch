@@ -1,77 +1,219 @@
-# Daily Job Search Portal
+# Job Search Portal — v2
 
-Searches for roles matching your background, flags remote + possible
-visa-sponsorship mentions, shows the relevant bit of your resume next to
-each match, and rebuilds a simple status page every day. Runs on GitHub's
-free tier -- no Claude account, no server, nothing to keep open.
+A daily-refreshing job portal that runs on GitHub's free tier. No server, no
+subscription, nothing to keep open. It searches for roles matching your
+background, ranks them remote-first, shows the relevant part of your resume
+next to each one, and gives you a one-click launcher into live searches on
+LinkedIn, Indeed, Glassdoor, Bayt, Naukrigulf, Seek, JobStreet, Rozee and
+the major remote boards.
 
-`index.html` in this folder is a **sample preview** built from fake data so
-you can see the look before connecting anything real. Once you follow the
-steps below, it'll rebuild itself daily with actual listings.
+---
 
-## What this does *not* do, on purpose
+## Setup from scratch — about 15 minutes, once
 
-It does not create accounts on job sites or submit applications for you.
-Every listing links straight to the real posting so you apply in one click
-once you've glanced at it. Two reasons:
+### 1. Create the repo
 
-- The only legitimate way to search programmatically (used here) is a
-  search-only API -- there's no "submit" endpoint to hook into.
-- Most real applications have custom questions, and a handful of employers'
-  systems actively flag/reject bot-submitted applications. A silent
-  auto-submit bot is more likely to hurt an application with 18 years of
-  real experience behind it than help it.
+1. Go to <https://github.com/new>.
+2. Name it something like `job-search`. **Private is fine** — GitHub Pages
+   works on private repos on the free tier for personal accounts, but if you
+   hit a Pages restriction, make it public. Nothing sensitive lives in the
+   code; the API keys go in Secrets, never in a file.
+3. Tick "Add a README file" so the repo isn't empty, then **Create
+   repository**.
 
-## Setup (about 5 minutes)
+### 2. Upload these files
 
-1. **Create a GitHub repo** (private is fine) and add these files, keeping
-   the folder structure exactly as-is -- `.github/workflows/` must stay at
-   the repo root for GitHub Actions to see it.
+Keep the folder structure exactly as it is — `.github/workflows/` must sit
+at the repo root or GitHub Actions won't find the schedule.
 
-2. **Get a free Adzuna API key**: https://developer.adzuna.com/ -- sign up,
-   no cost, takes about 2 minutes. You'll get an `App ID` and `App Key`.
+```
+job-search/
+├── job_search.py
+├── job_sites.py
+├── verify_links.py
+├── README.md
+└── .github/
+    └── workflows/
+        └── daily-job-search.yml
+```
 
-3. **Add them as repo secrets** (not directly in the code):
-   Repo -> Settings -> Secrets and variables -> Actions -> New repository
-   secret
-   - `ADZUNA_APP_ID`
-   - `ADZUNA_APP_KEY`
+Easiest way: on the repo page click **Add file → Upload files**, drag the
+whole `job-search-agent` folder's contents in, and commit. GitHub preserves
+the folder structure from a drag-and-drop.
 
-4. **Enable GitHub Pages**: Settings -> Pages -> Source: "Deploy from a
-   branch" -> Branch: `main`, folder `/ (root)`. You'll get a URL like
-   `https://<yourusername>.github.io/<reponame>/` -- bookmark it, that's
-   your portal.
+### 3. Get the two free API keys
 
-5. **Trigger the first run**: Actions tab -> "Daily Job Search" -> "Run
-   workflow". After it finishes (~1-2 min), refresh your Pages URL.
+**Adzuna** — <https://developer.adzuna.com/>
+Sign up, no card needed, takes about two minutes. You get an **App ID** and
+an **App Key**. Covers UK, US, Canada, Australia, NZ, Singapore, India,
+South Africa and most of Western Europe.
 
-From then on it reruns automatically every day at 06:00 UTC (edit the cron
-line in `.github/workflows/daily-job-search.yml` to change the time).
+**Jooble** — <https://jooble.org/api/about>
+Request a free API key. **Do not skip this one.** Adzuna has no index for
+the Gulf, no index for Pakistan, and nothing for SE Asia beyond Singapore.
+Jooble is the only thing covering UAE, Saudi, Qatar, Kuwait, Bahrain, Oman,
+Pakistan, Malaysia, Hong Kong, Thailand, Indonesia, the Philippines and
+Vietnam. Without it, the regions you specifically asked for are empty.
+
+### 4. Add the keys as repo secrets
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → **New
+repository secret**. Add three:
+
+| Name | Value |
+|---|---|
+| `ADZUNA_APP_ID` | your Adzuna App ID |
+| `ADZUNA_APP_KEY` | your Adzuna App Key |
+| `JOOBLE_APP_KEY` | your Jooble key |
+
+Secrets are encrypted and never appear in logs or in the committed files.
+
+### 5. Turn on GitHub Pages
+
+Repo → **Settings** → **Pages** → Source: **Deploy from a branch** →
+Branch: `main`, folder `/ (root)` → **Save**.
+
+You'll get a URL like `https://<your-username>.github.io/job-search/`.
+**Bookmark it on your phone and your laptop.** That's your portal.
+
+### 6. Run it for the first time
+
+Repo → **Actions** tab → **Daily Job Search** → **Run workflow**.
+
+It takes two to four minutes. When it goes green, refresh your Pages URL.
+If you still see an old version, hard-refresh (Ctrl+Shift+R / Cmd+Shift+R)
+or open it in a private window — GitHub Pages caches aggressively.
+
+From then on it reruns itself every day at **03:00 UTC (08:00 Pakistan
+time)**, so a fresh portal is waiting when you start your day. Change the
+`cron:` line in `.github/workflows/daily-job-search.yml` to move it.
+
+---
+
+## Using the portal
+
+Eight tabs across the top:
+
+| Tab | What it shows |
+|---|---|
+| **All** | Everything, ranked by fit score (remote and contract signals weigh heaviest) |
+| **Remote** | Fully-remote and hybrid roles only — your stated first preference |
+| **Contract** | Contract, freelance, day-rate, interim, outside-IR35 |
+| **Visa Sponsor** | Listings whose text mentions sponsorship, work permit, employment pass, relocation |
+| **Region** | Gulf / SEA-APAC / ANZ / Pakistan / UK-Europe / Americas |
+| **Role** | SAP Concur, Support & ITSM, Programme, Document Management, Contract |
+| **Latest** | Posted in the last three days |
+| **⌕ Job Sites** | The deep-link launcher — see below |
+
+Each card has a **"Why you're a fit"** drop-down pulling the matching lines
+from your resume. That text is your first draft of the cover-letter opening
+for that role — copy it, don't retype it.
+
+### The ⌕ Job Sites tab
+
+This is where LinkedIn, Indeed and Glassdoor live. Pick a search term from
+the row (SAP Concur, Application Support Manager, ITSM Manager…) and every
+link below rebuilds itself for that term. **61 sites across 7 regions**, so
+8 terms × 61 sites is roughly 490 pre-built searches, most of them
+pre-filtered to the last 7 days and sorted newest-first.
+
+The coloured dot on each link is honest bookkeeping:
+
+- 🟢 **verified** — I loaded that exact URL shape in a browser on
+  2026-09-02 and saw real filtered results. Bayt (all six GCC countries +
+  Pakistan), Naukrigulf, Rozee.pk.
+- 🟡 **standard** — the site's long-standing search form. Very likely
+  correct.
+- ⚪ **landing** — the site renders search client-side, so a keyword URL
+  won't stick. It opens their search page and you type the term. GulfTalent
+  and Toptal are the two that matter here.
+
+Run `python3 verify_links.py` any time (monthly is plenty) to catch a site
+that has changed its URL format. `403` responses in that output are
+expected and fine — big boards block scripted requests but serve the page
+normally in a real browser.
+
+---
+
+## Why LinkedIn / Indeed / Glassdoor aren't fetched into the portal
+
+None of the three offer a public job-search API to individual developers
+any more, and scraping them breaches their terms and gets IPs blocked
+quickly. So the agent does the legitimate thing instead: it builds the exact
+pre-filtered search URL and hands it to you as a button. You still see live
+results — on their site, one click away, always current.
+
+In practice this loses less than it sounds. Adzuna and Jooble are both
+aggregators that already pull from thousands of company career pages and
+smaller boards, and Google Jobs (in the launcher) indexes LinkedIn and
+Indeed postings anyway.
+
+## What this deliberately does not do
+
+It does not create accounts and it does not submit applications. Two
+reasons, and the second is the important one:
+
+1. There is no legitimate "submit" endpoint to hook into — the APIs are
+   search-only.
+2. Bulk bot-submitted applications get filtered by most ATS platforms, and
+   LinkedIn and Indeed suspend accounts for automated activity. Losing your
+   LinkedIn during a job search is a serious setback. With your profile,
+   twelve well-targeted applications a week will outperform three hundred
+   sprayed ones.
+
+---
 
 ## Tuning it
 
-Everything worth adjusting is in `job_search.py`, near the top:
+Everything worth changing sits near the top of `job_search.py`:
 
-- `KEYWORD_GROUPS` -- the search terms, now including `"Asta Powerproject"`.
-  That tool isn't in your resume, so `EXPERIENCE_BANK["planning"]` points
-  matches at your genuine critical-path / global-programme experience
-  instead of claiming hands-on Asta experience you'd have to back up in an
-  interview. If you *do* have real Asta Powerproject experience, add it to
-  that bucket directly and it'll show up honestly from then on.
-- `COUNTRIES` -- which Adzuna country indexes to search.
-- `MAX_PAGES` -- results depth per search (raise once you've confirmed a
-  clean first run; more pages = more API calls against your daily quota).
-- `EXPERIENCE_BANK` -- the resume bullets shown under "Why you're a fit".
-  Pulled from the resume you shared; edit freely, it's yours.
-- `VISA_HINTS` / `REMOTE_HINTS` -- the keyword patterns used to flag
-  listings. Best-effort text matching, not a guarantee -- always confirm
-  sponsorship on the actual listing.
+- **`KEYWORD_GROUPS`** — the 16 search terms. Add or remove freely. Adding
+  a term multiplies API calls, so trim as well as add.
+- **`COUNTRIES`** — Adzuna country indexes. An unsupported code just logs a
+  warning and skips, so it's safe to experiment.
+- **`JOOBLE_LOCATIONS`** — free-text locations. This is where you add
+  another Gulf or SEA city.
+- **`MAX_AGE_DAYS`** — currently 45. Listings older than this are dropped.
+- **`MAX_PAGES`** — depth per search. Raise to 2 once you've had a clean
+  run; it doubles your API usage.
+- **`score_job()`** — the ranking. Remote is worth +40, a Concur title +45
+  total, region nudges are small on purpose so geography never outranks a
+  good remote role. If you decide you'd rather prioritise the Gulf, raise
+  its number there.
+- **`EXPERIENCE_BANK`** — the resume bullets shown under "Why you're a
+  fit". Edit freely, it's yours.
 
-## If something looks off on the first real run
+And in `job_sites.py`:
 
-I wrote this against Adzuna's documented API shape but couldn't test a live
-call from the environment I built it in (no outbound access to job-board
-domains there). If a field comes back blank where you'd expect data (e.g.
-company name, or every result has 0 listings), check the console output
-from the Action's run log first -- it prints a warning line for anything
-that failed, which usually points straight at the fix.
+- **`LAUNCHER_TERMS`** — the chips in the Job Sites tab.
+- **`SITE_GROUPS`** — add a site, or a country you want covered.
+
+---
+
+## If a run looks wrong
+
+Check the Actions run log first — the script prints a warning line for
+every failed call, and that usually points straight at the problem.
+
+| Symptom | Cause |
+|---|---|
+| "Skipping Adzuna" | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` secrets not set, or misspelled |
+| "Skipping Jooble" | `JOOBLE_APP_KEY` not set — **this is why the Gulf and Pakistan are empty** |
+| `HTTP 401` from Adzuna | Wrong key, or the App ID and App Key are swapped |
+| `HTTP 429` | Free-tier daily quota hit. Trim `COUNTRIES` or `KEYWORD_GROUPS`, or leave `MAX_PAGES` at 1 |
+| Zero results everywhere but no warnings | Keywords too narrow — try one broad term like `IT manager` to confirm the pipe works |
+| Portal shows old data | GitHub Pages cache. Hard-refresh, or check `jobs.json` in the repo for the real state |
+
+To test locally without touching GitHub:
+
+```bash
+export ADZUNA_APP_ID="..." ADZUNA_APP_KEY="..." JOOBLE_APP_KEY="..."
+python3 job_search.py && open index.html
+```
+
+Or build just the portal shell, no keys and no API calls, to check the
+layout:
+
+```bash
+DEMO=1 python3 job_search.py && open index.html
+```
