@@ -28,11 +28,11 @@ PROFILE = {
     "years":           "18+",
 
     # ---- TODO: fill these five in. They are the ones you get asked most. --
-    "nationality":     "TODO — required on every Gulf application",
-    "notice_period":   "TODO — e.g. 'Immediate' or '30 days'",
-    "visa_status":     "TODO — e.g. 'Requires sponsorship' / 'Visit visa eligible'",
-    "salary_expect":   "TODO — a range, e.g. 'USD 70–90k' or 'AED 30–38k/month'",
-    "driving_licence": "TODO — matters more than you'd think in the GCC",
+    "nationality":     "Pakistani",
+    "notice_period":   "30 days",
+    "visa_status":     "Requires sponsorship",
+    "salary_expect":   "Market Trend",
+    "driving_licence": "No",
     # ----------------------------------------------------------------------
 
     "work_pref":       "Remote preferred; open to relocation for the right role",
